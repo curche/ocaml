@@ -157,9 +157,10 @@ The following environment variables are also consulted:
         value is allocated on the minor heap and holds more than this many
         bytes, only this value is counted against "custom_minor_ratio" and
         the rest is directly counted against "custom_major_ratio".
-        Default: 8192 bytes. Note:
-        this only applies to values allocated with "caml_alloc_custom_mem".
-        \end{options}
+
+        Default: 8192 bytes.
+        Note: this only applies to values allocated with "caml_alloc_custom_mem".
+
         The multiplier is "k", "M", or "G", for multiplication by $2^{10}$,
         $2^{20}$, and $2^{30}$ respectively.
   \item[o] ("space_overhead")  The major GC speed setting.
@@ -213,6 +214,7 @@ The following environment variables are also consulted:
   set its initial minor heap size to 1~megabyte and
   print a message at the start of each major GC cycle, when the heap
   size changes, and when compaction is triggered.
+  \end{options}
 
 \item["CAMLRUNPARAM"]  If "OCAMLRUNPARAM" is not found in the
   environment, then "CAMLRUNPARAM" will be used instead.  If

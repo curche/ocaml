@@ -45,6 +45,7 @@ atomic_uintnat caml_max_stack_wsize;
 uintnat caml_fiber_wsz;
 
 extern _Atomic uintnat caml_percent_free; /* see major_gc.c */
+extern uintnat caml_max_percent_free;     /* see major_gc.c */
 extern _Atomic uintnat caml_custom_major_ratio; /* see custom.c */
 extern _Atomic uintnat caml_custom_minor_ratio; /* see custom.c */
 extern _Atomic uintnat caml_custom_minor_max_bsz; /* see custom.c */
@@ -133,6 +134,7 @@ CAMLprim value caml_gc_get(value v)
   Store_field (res, 2,
     Val_long (atomic_load_relaxed(&caml_percent_free)));                /* o */
   Store_field (res, 3, Val_long (atomic_load_relaxed(&caml_verb_gc)));  /* v */
+  Store_field (res, 4, Val_long (caml_max_percent_free));               /* O */
   Store_field (res, 5, Val_long (caml_max_stack_wsize));                /* l */
   Store_field (res, 8,
     Val_long (atomic_load_relaxed(&caml_custom_major_ratio)));          /* M */
@@ -150,6 +152,11 @@ static uintnat norm_pfree (uintnat p)
   return Max (p, 1);
 }
 
+static uintnat norm_pmax (uintnat p)
+{
+  return p;
+}
+
 static uintnat norm_custom_maj (uintnat p)
 {
   return Max (p, 1);
@@ -165,6 +172,7 @@ CAMLprim value caml_gc_set(value v)
   uintnat newminwsz = caml_norm_minor_heap_size (Long_val (Field (v, 0)));
   uintnat newpf = norm_pfree (Long_val (Field (v, 2)));
   uintnat new_verb_gc = Long_val (Field (v, 3));
+  uintnat newpm = norm_pmax (Long_val (Field (v, 4)));
   uintnat new_max_stack_size = Long_val (Field (v, 5));
   uintnat new_custom_maj = norm_custom_maj (Long_val (Field (v, 8)));
   uintnat new_custom_min = norm_custom_min (Long_val (Field (v, 9)));
@@ -178,6 +186,12 @@ CAMLprim value caml_gc_set(value v)
     atomic_store_relaxed(&caml_percent_free, newpf);
     CAML_GC_MESSAGE(PARAMS, "New space overhead: %" CAML_PRIuNAT "%%\n",
                     caml_percent_free);
+  }
+
+  if (newpm != caml_max_percent_free) {
+    caml_max_percent_free = newpm;
+    caml_gc_message (0x20, "New max space overhead: %"
+                     ARCH_INTNAT_PRINTF_FORMAT "u%%\n", caml_max_percent_free);
   }
 
   atomic_store_relaxed(&caml_verb_gc, new_verb_gc);
@@ -241,12 +255,12 @@ CAMLprim value caml_gc_minor(value v)
   return caml_get_value_or_raise(result);
 }
 
-static caml_result gc_major_res(int force_compaction)
+static caml_result gc_major_res(int compaction)
 {
   CAML_EV_BEGIN(EV_EXPLICIT_GC_MAJOR);
   caml_gc_log ("Major GC cycle requested");
   caml_empty_minor_heaps_once();
-  caml_finish_major_cycle(force_compaction);
+  caml_finish_major_cycle(compaction);
   caml_reset_major_pacing();
   caml_result result = caml_process_pending_actions_res();
   CAML_EV_END(EV_EXPLICIT_GC_MAJOR);
@@ -257,7 +271,7 @@ CAMLprim value caml_gc_major(value v)
 {
   Caml_check_caml_state();
   CAMLassert (v == Val_unit);
-  return caml_get_value_or_raise(gc_major_res(0));
+  return caml_get_value_or_raise(gc_major_res(Compaction_auto));
 }
 
 static caml_result gc_full_major_res(void)
@@ -267,7 +281,7 @@ static caml_result gc_full_major_res(void)
   /* In general, it can require up to 3 GC cycles for a
      currently-unreachable object to be collected. */
   for (int i = 0; i < 3; i++) {
-    caml_finish_major_cycle(0);
+    caml_finish_major_cycle(i == 2 ? Compaction_auto : Compaction_none);
     caml_reset_major_pacing();
     caml_result res = caml_process_pending_actions_res();
     if (caml_result_is_exception(res)) return res;
@@ -303,7 +317,7 @@ CAMLprim value caml_gc_compaction(value v)
   /* We do a full major before this compaction. See [caml_full_major_res] for
      why this needs three iterations. */
   for (int i = 0; i < 3; i++) {
-    caml_finish_major_cycle(i == 2);
+    caml_finish_major_cycle(i == 2 ? Compaction_forced : Compaction_none);
     caml_reset_major_pacing();
     result = caml_process_pending_actions_res();
     if (caml_result_is_exception(result)) break;
@@ -340,6 +354,7 @@ void caml_init_gc (void)
   caml_fiber_wsz = (Stack_threshold * 2) / sizeof(value);
   atomic_store_relaxed(&caml_percent_free,
                        norm_pfree (caml_params->init_percent_free));
+  caml_max_percent_free = norm_pmax (caml_params->init_max_percent_free);
   caml_gc_log ("Initial stack limit: %" CAML_PRIuNAT "k bytes",
                caml_params->init_max_stack_wsz / 1024 * sizeof (value));
 
@@ -385,7 +400,7 @@ CAMLprim value caml_runtime_parameters (value unit)
   char *no_tweaks = "";
   value res = caml_alloc_sprintf
       ("b=%d,c=%"F_Z",e=%"F_Z",l=%"F_Z",M=%"F_Z",m=%"F_Z",n=%"F_Z","
-       "o=%"F_Z",p=%d,s=%"F_S",t=%"F_Z",v=%"F_Z",V=%"F_Z",W=%"F_Z"%s",
+       "o=%"F_Z",O=%"F_Z",p=%d,s=%"F_S",t=%"F_Z",v=%"F_Z",V=%"F_Z",W=%"F_Z"%s",
        /* b */ (int) Caml_state->backtrace_active,
        /* c */ caml_params->cleanup_on_exit,
        /* e */ caml_params->runtime_events_log_wsize,
@@ -394,6 +409,7 @@ CAMLprim value caml_runtime_parameters (value unit)
        /* m */ caml_custom_minor_ratio,
        /* n */ caml_custom_minor_max_bsz,
        /* o */ caml_percent_free,
+       /* O */ caml_max_percent_free,
        /* p */ Caml_state->parser_trace,
        /* R */ /* missing */
        /* s */ Caml_state->minor_heap_wsz,

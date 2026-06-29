@@ -212,6 +212,11 @@ typedef uintptr_t uintnat;
    total size of live objects. */
 #define Percent_free_def 120
 
+/* Default setting for the compacter: 500%
+   (i.e. trigger the compacter when 5/6 of the heap is free or garbage).
+ */
+#define Max_percent_free_def 500
+
 /* Default setting for the major GC slice smoothing window: 1
    (i.e. no smoothing)
 */

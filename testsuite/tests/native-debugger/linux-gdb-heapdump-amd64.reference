@@ -1,0 +1,28 @@
+OCaml support module loaded. Values of type 'XXXX' will now
+print as OCaml values, there is a $Array() convenience function,
+and an 'XXXX' command is available for heap exploration
+(see 'XXXX' for more information).
+Breakpoint 1 at 0x00000000000000: file gdb_heapdump.ml, line XXX.
+allocated
+Breakpoint 1, camlGdb_heapdump.entry () at gdb_heapdump.ml:21
+21	  print_endline "parked"
+check-heap reports invariant holds: PASS
+check-heap reports exactly one domain: PASS
+dump-heap reports success: PASS
+dump-heap wrote domains.jsonl: PASS
+dump-heap wrote threads.jsonl: PASS
+dump-heap wrote pools.jsonl: PASS
+dump-heap wrote large.jsonl: PASS
+dump-heap wrote global.jsonl: PASS
+dump-heap did not write blocks.jsonl without --full: PASS
+dump-heap wrote exactly one domain row: PASS
+dump-heap domain has zero unswept pools: PASS
+dump-heap has at least one live thread: PASS
+every thread's caml_state matches a domain (dedup key): PASS
+dump-heap found large allocations: PASS
+dump-heap --full wrote blocks.jsonl: PASS
+dump-heap --full live block count matches pool_live_blocks: PASS
+ocaml find locates a known large block: PASS
+dump-heap prints usage message on missing argument: PASS
+parked
+[Inferior 1 (process XXXX) exited normally]

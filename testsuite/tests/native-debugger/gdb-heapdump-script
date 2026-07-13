@@ -1,0 +1,78 @@
+set disable-randomization off
+set debuginfod enabled off
+set print thread-events off
+python
+import os
+gdb.execute("source " + os.path.join(os.environ["ocamlsrcdir"], "tools",
+                                     "gdb.py"))
+end
+break gdb_heapdump.ml:21
+run
+python
+import json
+import os
+import shutil
+import tempfile
+
+def check(name, cond):
+    print(f"{name}: {'PASS' if cond else 'FAIL'}")
+
+# `ocaml check-heap`: right after allocation (no GC has run), sweeping is
+# trivially complete, so the invariant should hold.
+out = gdb.execute("ocaml check-heap", to_string=True)
+check("check-heap reports invariant holds", "sweep invariant holds" in out)
+check("check-heap reports exactly one domain", out.count("domain ") == 1)
+
+tmpdir = tempfile.mkdtemp()
+try:
+    out = gdb.execute("ocaml dump-heap " + tmpdir, to_string=True)
+    check("dump-heap reports success", "wrote heap dump to" in out)
+    for name in ("domains", "threads", "pools", "large", "global"):
+        check(f"dump-heap wrote {name}.jsonl",
+              os.path.exists(os.path.join(tmpdir, f"{name}.jsonl")))
+    check("dump-heap did not write blocks.jsonl without --full",
+          not os.path.exists(os.path.join(tmpdir, "blocks.jsonl")))
+
+    with open(os.path.join(tmpdir, "domains.jsonl")) as f:
+        domains = [json.loads(line) for line in f]
+    check("dump-heap wrote exactly one domain row", len(domains) == 1)
+    check("dump-heap domain has zero unswept pools",
+          domains[0].get("unswept_pool_count") == 0)
+
+    with open(os.path.join(tmpdir, "threads.jsonl")) as f:
+        threads = [json.loads(line) for line in f]
+    domain_states = {d["caml_state"] for d in domains}
+    check("dump-heap has at least one live thread", len(threads) >= 1)
+    check("every thread's caml_state matches a domain (dedup key)",
+          all(t["caml_state"] in domain_states for t in threads))
+
+    with open(os.path.join(tmpdir, "large.jsonl")) as f:
+        large = [json.loads(line) for line in f]
+    check("dump-heap found large allocations", len(large) > 0)
+
+    out_full = gdb.execute("ocaml dump-heap " + tmpdir + " --full",
+                           to_string=True)
+    check("dump-heap --full wrote blocks.jsonl",
+          os.path.exists(os.path.join(tmpdir, "blocks.jsonl")))
+    with open(os.path.join(tmpdir, "blocks.jsonl")) as f:
+        blocks = [json.loads(line) for line in f]
+    live = sum(1 for b in blocks if b["status"] != "free")
+    check("dump-heap --full live block count matches pool_live_blocks",
+          live == domains[0]["pool_live_blocks"])
+
+    # Regression check: `ocaml find` (unrelated to dump-heap, but sharing
+    # the same refactored pool/large traversal) should still locate a
+    # known large allocation by address.
+    addr = large[0]["address"]
+    find_out = gdb.execute(f"ocaml find (value)0x{addr:x}", to_string=True)
+    check("ocaml find locates a known large block",
+          "found:" in find_out and "large" in find_out)
+
+    bad_out = gdb.execute("ocaml dump-heap", to_string=True)
+    check("dump-heap prints usage message on missing argument",
+          "usage:" in bad_out)
+finally:
+    shutil.rmtree(tmpdir, ignore_errors=True)
+end
+continue
+quit

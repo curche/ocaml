@@ -177,6 +177,28 @@ class GDBTarget:
         return GDBValue(gdb.Value(v).cast(self._value_type._t),
                         self)
 
+    def threads(self):
+        """Yield `(thread_num, ptid, caml_state_addr)` for every thread in
+        the current inferior, reading the thread-local `caml_state`
+        variable while each thread is selected in turn (GDB resolves
+        `CAMLthread_local` globals per selected thread automatically).
+        `caml_state_addr` is `None` if the thread has no `caml_state` yet
+        (e.g. a not-yet-initialised backup thread). The originally
+        selected thread is restored before returning, even if the caller
+        stops consuming this generator early."""
+        original = gdb.selected_thread()
+        try:
+            for thread in gdb.selected_inferior().threads():
+                thread.switch()
+                try:
+                    addr = self.global_variable('caml_state').unsigned()
+                except gdb.error:
+                    addr = None
+                yield thread.num, thread.ptid, addr
+        finally:
+            if original is not None:
+                original.switch()
+
 # Object obeying Python's iterator protocol, for iterating through the
 # children of a value. This gives us slightly nicer display of block
 # values.
@@ -263,6 +285,58 @@ class OCamlFind(gdb.Command):
         ocaml.Finder(target).find(arg, val)
 
 OCamlFind()
+
+class OCamlDumpHeap(gdb.Command):
+    """ocaml dump-heap <output-dir> [--full]: dump a snapshot of every
+domain's shared major heap (plus the global orphan freelist and a
+per-thread TLS cross-check) as newline-delimited JSON files under
+<output-dir> (domains.jsonl, threads.jsonl, pools.jsonl, large.jsonl,
+global.jsonl). Pass --full to also walk every individual block, writing
+blocks.jsonl with per-block live/free/garbage accounting (slower: one
+memory read per block). See tools/gdb_heap_dump_to_parquet.py to convert
+the result to parquet for offline analysis."""
+    def __init__(self):
+        super(OCamlDumpHeap, self).__init__("ocaml dump-heap",
+                                            gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        self.dont_repeat()
+        args = gdb.string_to_argv(arg)
+        full = '--full' in args
+        paths = [a for a in args if a != '--full']
+        if len(paths) != 1:
+            print("usage: ocaml dump-heap <output-dir> [--full]")
+            return
+        target = GDBTarget()
+        counts = ocaml.HeapDump(target).dump(paths[0], full=full)
+        print(f"wrote heap dump to {paths[0]}:")
+        for name, count in counts.items():
+            print(f"  {name}: {count}")
+
+OCamlDumpHeap()
+
+class OCamlCheckHeap(gdb.Command):
+    """ocaml check-heap: check that every domain's unswept pool/large
+lists are empty, the invariant expected right after a full sweep (e.g. at
+a major-GC-cycle boundary)."""
+    def __init__(self):
+        super(OCamlCheckHeap, self).__init__("ocaml check-heap",
+                                             gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        self.dont_repeat()
+        target = GDBTarget()
+        all_ok, results = ocaml.check_heap(target)
+        for r in results:
+            status = 'ok' if r['ok'] else 'FAIL'
+            print(f"domain {r['index']}: "
+                  f"unswept avail={r['unswept_avail_pools']} "
+                  f"full={r['unswept_full_pools']} "
+                  f"large={r['unswept_large']} [{status}]")
+        print('sweep invariant holds' if all_ok
+              else 'sweep invariant VIOLATED')
+
+OCamlCheckHeap()
 
 # A convenience function $Array which casts a value to an array of values.
 

@@ -234,6 +234,62 @@ Source directories searched: /tmp:/home/user/.opam/5.4.0/.opam-switch/sources/oc
 11	let _ = main ()
 \end{verbatim}
 
+\subsection{ss:native-debugger-gdb-heap-dump}{Dumping the shared heap}
+
+Besides printing individual values, \texttt{tools/gdb.py} can also walk the
+whole multicore shared major heap -- every domain, every pool, and (with
+\texttt{--full}) every individual block -- and write it out as
+newline-delimited JSON, for offline analysis. This is useful for
+inspecting the memory state of a program that isn't conveniently
+reproducible interactively, e.g. a long-running service stopped at an
+arbitrary point.
+
+\begin{verbatim}
+(gdb) ocaml dump-heap /tmp/heapdump
+wrote heap dump to /tmp/heapdump:
+  domains: 3
+  threads: 6
+  pools: 23
+  large: 6
+  global: 1
+\end{verbatim}
+
+This writes \texttt{domains.jsonl}, \texttt{threads.jsonl},
+\texttt{pools.jsonl}, \texttt{large.jsonl}, and \texttt{global.jsonl} into
+the given directory: one row per domain, per live OS thread (matched to
+its domain by comparing the thread-local \texttt{caml\_state} pointer,
+since a domain's own thread and its backup thread share the same
+\texttt{caml\_state}), per pool, per large allocation, and one row
+summarising the global orphan pool freelist and chunk bookkeeping,
+respectively. Passing \texttt{--full} additionally walks every block in
+every pool (slower on a large heap) and writes \texttt{blocks.jsonl} with
+per-block tag/size/live-or-free information.
+
+The standalone script \texttt{tools/gdb\_heap\_dump\_to\_parquet.py}
+(run with a normal \texttt{python3} that has pandas/pyarrow installed,
+outside of GDB) converts a dump directory into parquet files for use with
+common data-analysis tools, and reports if the "no unswept pools" sweep
+invariant is violated:
+
+\begin{verbatim}
+$ tools/gdb_heap_dump_to_parquet.py /tmp/heapdump /tmp/heapdump-parquet
+sweep invariant holds: all 3 domain(s) have 0 unswept pools
+wrote /tmp/heapdump-parquet/domains.parquet (3 rows)
+...
+\end{verbatim}
+
+For a quick check without writing any files, e.g. to confirm sweeping
+has actually completed at a major-GC-cycle boundary, use
+\texttt{ocaml check-heap}:
+
+\begin{verbatim}
+(gdb) ocaml check-heap
+domain 0: unswept avail=0 full=0 large=False [ok]
+domain 1: unswept avail=0 full=0 large=False [ok]
+domain 2: unswept avail=0 full=0 large=False [ok]
+sweep invariant holds
+\end{verbatim}
+
 \subsection{ss:native-debugger-gdb-commands}{GDB Commands}
 
 Summary of interesting OCaml specific GDB commands:
@@ -256,6 +312,15 @@ Print lines centered around line number \var{linenum} in the current source file
 
 \item["directory "\var{dirname}]
 Add directory \var{dirname} to the front of the source path, several directory names can be supplied separated by \texttt{:}. Useful when directories change between compilation and a debug session.
+
+\item["ocaml find "\var{expr}]
+Report where on the shared heap the OCaml value \var{expr} lives (which domain, which pool or large allocation).
+
+\item["ocaml dump-heap "\var{output-dir}" [--full]"]
+Dump every domain's shared heap (and the global orphan freelist) as JSONL files under \var{output-dir}. See \ref{ss:native-debugger-gdb-heap-dump}.
+
+\item["ocaml check-heap"]
+Check that every domain's unswept pool/large lists are empty, the invariant expected right after a full sweep.
 
 \end{options}
 

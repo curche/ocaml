@@ -1421,55 +1421,6 @@ static void mark_slice_darken(struct mark_stack* stk, value child,
   }
 }
 
-/* ---- BEGIN alignment-artifact padding experiment (v2, on top of auto-compact-5.5) ----
- * Same inert padding as ocaml-git branch padding-test-5.5-v2, now applied on
- * top of the real auto-compact-5.5 patch instead of stock, to test whether
- * further code-layout shift compounds, cancels, or has no effect on the
- * already-patched regression. Never called; kept alive only via
- * __attribute__((used)). See running-ng
- * experiments/pplacer-gc-regression/alignment-artifact/. */
-static volatile uintnat dummy_pad_counter = 0;
-
-__attribute__((used))
-static bool dummy_pad_check(int mode)
-{
-  if (mode == 0) {
-    return false;
-  } else if (mode == 1) {
-    caml_gc_log("dummy: forced.");
-    return true;
-  }
-  CAMLassert(mode == 2);
-
-  if (dummy_pad_counter >= 1000 * 1000) {
-    caml_gc_log("dummy: counter %"ARCH_INTNAT_PRINTF_FORMAT"u: off.",
-                dummy_pad_counter);
-    return false;
-  }
-  if (dummy_pad_counter < 3) {
-    caml_gc_log("dummy: counter %"ARCH_INTNAT_PRINTF_FORMAT"u: low.",
-                dummy_pad_counter);
-    return false;
-  }
-
-  uintnat heap_words = dummy_pad_counter * 2;
-  if (Bsize_wsize(heap_words) <= 2 * (uintnat)Bsize_wsize(256)) {
-    return false;
-  }
-
-  uintnat live_words = heap_words / 2;
-  uintnat free_words = heap_words - live_words;
-  double current_overhead = live_words ? 100.0 * free_words / live_words : 0.0;
-
-  bool compacting = current_overhead >= 500;
-  caml_gc_log("dummy: overhead %"ARCH_INTNAT_PRINTF_FORMAT"u%% %s 500%%: %s.",
-              (uintnat) current_overhead,
-              compacting ? ">=" : "<",
-              compacting ? "compacting" : "not compacting");
-  return compacting;
-}
-/* ---- END alignment-artifact padding experiment ---- */
-
 Caml_noinline static intnat do_some_marking(struct mark_stack* stk,
                                             intnat budget) {
   prefetch_buffer_t pb = { .enqueued = 0, .dequeued = 0,
@@ -1934,6 +1885,56 @@ static bool should_compact_from_stw_single(int compaction_mode)
                    compacting ? "" : "not ");
   return compacting;
 }
+
+/* ---- BEGIN alignment-artifact padding experiment (v1, on top of auto-compact-5.5) ----
+ * Same inert padding as ocaml-git branch padding-test-5.5 (v1, placed after
+ * the real should_compact_from_stw_single rather than before
+ * do_some_marking), now applied on top of the real auto-compact-5.5 patch.
+ * v1 on stock did NOT shift do_some_marking/mark at all; this tests whether
+ * that holds when placed after already-patched code too. Never called;
+ * kept alive only via __attribute__((used)). See running-ng
+ * experiments/pplacer-gc-regression/alignment-artifact/. */
+static uintnat dummy_pad_counter_v1 = 0;
+
+__attribute__((used))
+static bool dummy_pad_check_v1(int mode)
+{
+  if (mode == 0) {
+    return false;
+  } else if (mode == 1) {
+    caml_gc_log("dummy: forced.");
+    return true;
+  }
+  CAMLassert(mode == 2);
+
+  if (dummy_pad_counter_v1 >= 1000 * 1000) {
+    caml_gc_log("dummy: counter %"ARCH_INTNAT_PRINTF_FORMAT"u: off.",
+                dummy_pad_counter_v1);
+    return false;
+  }
+  if (dummy_pad_counter_v1 < 3) {
+    caml_gc_log("dummy: counter %"ARCH_INTNAT_PRINTF_FORMAT"u: low.",
+                dummy_pad_counter_v1);
+    return false;
+  }
+
+  uintnat heap_words = dummy_pad_counter_v1 * 2;
+  if (Bsize_wsize(heap_words) <= 2 * (uintnat)Bsize_wsize(256)) {
+    return false;
+  }
+
+  uintnat live_words = heap_words / 2;
+  uintnat free_words = heap_words - live_words;
+  double current_overhead = live_words ? 100.0 * free_words / live_words : 0.0;
+
+  bool compacting = current_overhead >= 500;
+  caml_gc_log("dummy: overhead %"ARCH_INTNAT_PRINTF_FORMAT"u%% %s 500%%: %s.",
+              (uintnat) current_overhead,
+              compacting ? ">=" : "<",
+              compacting ? "compacting" : "not compacting");
+  return compacting;
+}
+/* ---- END alignment-artifact padding experiment ---- */
 
 struct cycle_callback_params {
   int compaction_mode;

@@ -1420,6 +1420,58 @@ static void mark_slice_darken(struct mark_stack* stk, value child,
   }
 }
 
+/* ---- BEGIN alignment-artifact padding experiment (v2: before do_some_marking) ----
+ * Inert padding mirroring the size/shape of auto-compact-5.5's
+ * should_compact_from_stw_single, inserted immediately before
+ * do_some_marking (rather than after cycle_major_heap_from_stw_single, as
+ * v1 did) since v1 did NOT shift do_some_marking's address at all (nm
+ * showed it identical to stock) despite the real patch shifting it by
+ * 592 bytes. This tests whether placement *before* the function in source
+ * order is what's needed to reproduce a comparable shift. Never called;
+ * kept alive only via __attribute__((used)). See running-ng
+ * experiments/pplacer-gc-regression/alignment-artifact/. */
+static volatile uintnat dummy_pad_counter = 0;
+
+__attribute__((used))
+static bool dummy_pad_check(int mode)
+{
+  if (mode == 0) {
+    return false;
+  } else if (mode == 1) {
+    caml_gc_log("dummy: forced.");
+    return true;
+  }
+  CAMLassert(mode == 2);
+
+  if (dummy_pad_counter >= 1000 * 1000) {
+    caml_gc_log("dummy: counter %"ARCH_INTNAT_PRINTF_FORMAT"u: off.",
+                dummy_pad_counter);
+    return false;
+  }
+  if (dummy_pad_counter < 3) {
+    caml_gc_log("dummy: counter %"ARCH_INTNAT_PRINTF_FORMAT"u: low.",
+                dummy_pad_counter);
+    return false;
+  }
+
+  uintnat heap_words = dummy_pad_counter * 2;
+  if (Bsize_wsize(heap_words) <= 2 * (uintnat)Bsize_wsize(256)) {
+    return false;
+  }
+
+  uintnat live_words = heap_words / 2;
+  uintnat free_words = heap_words - live_words;
+  double current_overhead = live_words ? 100.0 * free_words / live_words : 0.0;
+
+  bool compacting = current_overhead >= 500;
+  caml_gc_log("dummy: overhead %"ARCH_INTNAT_PRINTF_FORMAT"u%% %s 500%%: %s.",
+              (uintnat) current_overhead,
+              compacting ? ">=" : "<",
+              compacting ? "compacting" : "not compacting");
+  return compacting;
+}
+/* ---- END alignment-artifact padding experiment ---- */
+
 Caml_noinline static intnat do_some_marking(struct mark_stack* stk,
                                             intnat budget) {
   prefetch_buffer_t pb = { .enqueued = 0, .dequeued = 0,
@@ -1834,56 +1886,6 @@ static void cycle_major_heap_from_stw_single(
 
   caml_code_fragment_cleanup_from_stw_single();
 }
-
-/* ---- BEGIN alignment-artifact padding experiment ----
- * Inert padding mirroring the size/shape of auto-compact-5.5's
- * should_compact_from_stw_single, inserted at the same location, to test
- * whether that patch's pplacer_testsuite regression is a code-layout/
- * cache-alignment artifact rather than a real algorithmic cost. Never
- * called from anywhere; kept alive only via __attribute__((used)) so the
- * linker can't strip it. See running-ng
- * experiments/pplacer-gc-regression/alignment-artifact/. */
-static uintnat dummy_pad_counter = 0;
-
-__attribute__((used))
-static bool dummy_pad_check(int mode)
-{
-  if (mode == 0) {
-    return false;
-  } else if (mode == 1) {
-    caml_gc_log("dummy: forced.");
-    return true;
-  }
-  CAMLassert(mode == 2);
-
-  if (dummy_pad_counter >= 1000 * 1000) {
-    caml_gc_log("dummy: counter %"ARCH_INTNAT_PRINTF_FORMAT"u: off.",
-                dummy_pad_counter);
-    return false;
-  }
-  if (dummy_pad_counter < 3) {
-    caml_gc_log("dummy: counter %"ARCH_INTNAT_PRINTF_FORMAT"u: low.",
-                dummy_pad_counter);
-    return false;
-  }
-
-  uintnat heap_words = dummy_pad_counter * 2;
-  if (Bsize_wsize(heap_words) <= 2 * (uintnat)Bsize_wsize(256)) {
-    return false;
-  }
-
-  uintnat live_words = heap_words / 2;
-  uintnat free_words = heap_words - live_words;
-  double current_overhead = live_words ? 100.0 * free_words / live_words : 0.0;
-
-  bool compacting = current_overhead >= 500;
-  caml_gc_log("dummy: overhead %"ARCH_INTNAT_PRINTF_FORMAT"u%% %s 500%%: %s.",
-              (uintnat) current_overhead,
-              compacting ? ">=" : "<",
-              compacting ? "compacting" : "not compacting");
-  return compacting;
-}
-/* ---- END alignment-artifact padding experiment ---- */
 
 struct cycle_callback_params {
   int force_compaction;

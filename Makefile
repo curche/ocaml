@@ -2592,6 +2592,19 @@ else
 	 @echo "Architecture tests are disabled on 32-bit platforms."
 endif
 
+# Verify the generated USDT probe surface is in sync with the event enums, and
+# that every CAML_EV_* call site still names its phase/counter as a literal.
+# The second half is load-bearing: static probe names are built by pasting
+# that token, so a variable there silently produces a probe named
+# CAML_USDT_<macro>_<varname> rather than failing to compile.
+# Python is not a build dependency: the generated header is committed, so
+# only regenerating or checking it needs an interpreter. Hence this target is
+# not wired into the default build.
+PYTHON ?= python3
+.PHONY: check-usdt-probes
+check-usdt-probes:
+	$(PYTHON) tools/gen_runtime_events_usdt.py --check
+
 # The native toplevel
 
 ocamlnat_LIBRARIES = \

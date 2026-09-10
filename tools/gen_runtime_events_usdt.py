@@ -48,6 +48,43 @@ def probe_name(ident, strip):
     return ident[len(strip):].lower()
 
 
+SCAN_GLOBS = ['runtime/*.c', 'runtime/*.h', 'runtime/caml/*.h']
+
+# The one site that legitimately cannot use a literal: realloc_generic_table()
+# takes its counter as a parameter. It uses CAML_EV_COUNTER_DYN instead, which
+# dispatches to the per-counter probe through a generated switch.
+KNOWN_DYNAMIC = {('runtime/minor_gc.c', 'CAML_EV_COUNTER_DYN')}
+
+
+def check_literal_sites():
+    """Every CAML_EV_* site must name its phase/counter as an EV_ literal.
+
+    Static probe names are produced by pasting that token, so a variable
+    silently generates a probe called CAML_USDT_COUNTER_<varname> instead of
+    failing to compile. Returns a list of offending sites.
+    """
+    import glob
+    pat = re.compile(
+        r'\bCAML_EV_(BEGIN|END|COUNTER|COUNTER_DYN|LIFECYCLE)\s*\(\s*'
+        r'([A-Za-z_][A-Za-z_0-9]*)')
+    offenders = []
+    total = 0
+    for path in sorted(set(sum((glob.glob(g) for g in SCAN_GLOBS), []))):
+        if path.endswith('runtime_events.h'):
+            continue          # the macro definitions themselves
+        text = open(path).read()
+        for m in pat.finditer(text):
+            macro, arg = 'CAML_EV_' + m.group(1), m.group(2)
+            total += 1
+            if arg.startswith('EV_'):
+                continue
+            if (path, macro) in KNOWN_DYNAMIC:
+                continue
+            line = text[:m.start()].count('\n') + 1
+            offenders.append((path, line, macro, arg))
+    return total, offenders
+
+
 def main():
     if not os.path.exists(HEADER):
         sys.exit('run from the tree root: %s not found' % HEADER)
@@ -155,8 +192,18 @@ def main():
         if cur != text:
             sys.exit('%s is stale: re-run tools/gen_runtime_events_usdt.py'
                      % OUTPUT)
-        print('%s is up to date (%d phases, %d counters, %d lifecycle)'
-              % (OUTPUT, len(phases), len(counters), len(lifecycles)))
+        total, offenders = check_literal_sites()
+        if offenders:
+            for path, line, macro, arg in offenders:
+                sys.stderr.write(
+                    '%s:%d: %s(%s) does not name an EV_ literal; static probe '
+                    'names are built by pasting this token. Use '
+                    'CAML_EV_COUNTER_DYN, or add the site to KNOWN_DYNAMIC in '
+                    '%s.\n' % (path, line, macro, arg, sys.argv[0]))
+            sys.exit('%d non-literal CAML_EV_* site(s)' % len(offenders))
+        print('%s is up to date (%d phases, %d counters, %d lifecycle); '
+              '%d call sites all name EV_ literals'
+              % (OUTPUT, len(phases), len(counters), len(lifecycles), total))
         return
     open(OUTPUT, 'w').write(text)
     print('wrote %s: %d phases (%d probes), %d counters, %d lifecycle '

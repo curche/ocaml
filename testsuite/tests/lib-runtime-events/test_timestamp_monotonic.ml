@@ -1,6 +1,8 @@
 
 (* TEST
  include runtime_events;
+ ocamlrunparam += ",v=0";
+ debug-runtime;
 *)
 open Runtime_events
 

@@ -1,5 +1,7 @@
 (* TEST
  include runtime_events;
+ ocamlrunparam += ",v=0";
+ debug-runtime;
  include unix;
  ocamlrunparam += ",e=6";
  hasunix;

@@ -140,6 +140,9 @@ val function_sections : bool
 val instrumented_runtime : bool
 (** Whether the instrumented runtime is available *)
 
+val debug_runtime : bool
+(** Whether the instrumented runtime is available *)
+
 val frame_pointers : bool
 (** Whether frame-pointers have been enabled at configure time *)
 

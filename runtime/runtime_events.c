@@ -43,6 +43,12 @@
 #include <unistd.h>
 #endif
 
+/* The ring-buffer producer below is built only for the debug runtime (or for
+   an explicit -DCAML_RUNTIME_EVENTS build); see runtime_events.h. The default
+   runtime traces through the USDT probes instead, and gets the stub
+   implementations at the bottom of this file. */
+#ifdef CAML_RUNTIME_EVENTS
+
 #define RUNTIME_EVENTS_VERSION 1
 
 /*
@@ -870,3 +876,102 @@ CAMLexport value caml_runtime_events_user_resolve(
 
   CAMLreturn (Val_none);
 }
+
+#else /* !CAML_RUNTIME_EVENTS -- default runtime: USDT probes, no ring */
+
+/* Every symbol the rest of the runtime, the stdlib primitive table and
+   otherlibs link against must still exist here.
+   `runtime/primitives` lists the OCaml-visible ones.
+
+   The guiding rule for these: a build without the ring must never be
+   mistakable for a run that recorded nothing. Anything that would report
+   emptiness raises or warns instead. `olly` printing "0 events" against a
+   default-runtime process would be indistinguishable from a broken
+   measurement, which is a trap the runtime_events investigation in
+   ../runtime-events-batch hit repeatedly. */
+
+#define CAML_NO_RING_MSG                                                \
+  "runtime_events is not available in this runtime variant: the ring "  \
+  "buffer is built only into the debug runtime. Relink with "           \
+  "-runtime-variant d, or trace the USDT probes instead "               \
+  "(bpftrace -l 'usdt:<binary>:ocaml:*')."
+
+void caml_runtime_events_init(void) {
+  /* Warn rather than ignore: someone who set this expects a trace. */
+  if (caml_secure_getenv(T("OCAML_RUNTIME_EVENTS_START")) != NULL) {
+    caml_gc_message(0x01,
+      "OCAML_RUNTIME_EVENTS_START is set but " CAML_NO_RING_MSG "\n");
+  }
+}
+
+void caml_runtime_events_destroy(void) { }
+void caml_runtime_events_post_fork(void) { }
+void caml_runtime_events_start(void) { }
+void caml_runtime_events_pause(void) { }
+void caml_runtime_events_resume(void) { }
+
+CAMLexport int caml_runtime_events_are_active(void) { return 0; }
+
+char_os* caml_runtime_events_current_location(void) { return NULL; }
+
+/* The USDT probe has already fired by the time these are reached: it is
+   emitted by the CAML_EV_* macro at the call site, deliberately outside any
+   ring check, so tracing does not depend on these at all. */
+void caml_ev_begin(ev_runtime_phase phase) { (void) phase; }
+void caml_ev_end(ev_runtime_phase phase) { (void) phase; }
+void caml_ev_counter(ev_runtime_counter counter, uint64_t val)
+{ (void) counter; (void) val; }
+void caml_ev_lifecycle(ev_lifecycle lifecycle, int64_t data)
+{ (void) lifecycle; (void) data; }
+void caml_ev_alloc(uint64_t sz) { (void) sz; }
+void caml_ev_alloc_flush(void) { }
+
+CAMLprim value caml_ml_runtime_events_start(value vunit)
+{
+  (void) vunit;
+  caml_failwith(CAML_NO_RING_MSG);
+}
+
+CAMLprim value caml_ml_runtime_events_pause(value vunit)
+{
+  (void) vunit; return Val_unit;
+}
+
+CAMLprim value caml_ml_runtime_events_resume(value vunit)
+{
+  (void) vunit; return Val_unit;
+}
+
+CAMLprim value caml_ml_runtime_events_path(value vunit)
+{
+  (void) vunit; return Val_none;
+}
+
+CAMLprim value caml_ml_runtime_events_are_active(void) { return Val_false; }
+
+/* User events are the one part of runtime_events that USDT cannot replace:
+   their names are registered at run time, and a static probe name has to be a
+   compile-time literal. So they go with the ring rather than gaining a USDT
+   equivalent, and raise here. */
+CAMLexport value caml_runtime_events_user_register(value event_name,
+   value event_tag, value event_type)
+{
+  (void) event_name; (void) event_tag; (void) event_type;
+  caml_failwith("Runtime_events.User.register: " CAML_NO_RING_MSG);
+}
+
+CAMLexport value caml_runtime_events_user_write(value buf, value event,
+   value event_content)
+{
+  (void) buf; (void) event; (void) event_content;
+  caml_failwith("Runtime_events.User.write: " CAML_NO_RING_MSG);
+}
+
+CAMLexport value caml_runtime_events_user_resolve(
+  char* event_name, ev_user_ml_type event_type)
+{
+  (void) event_name; (void) event_type;
+  return Val_none;
+}
+
+#endif /* CAML_RUNTIME_EVENTS */

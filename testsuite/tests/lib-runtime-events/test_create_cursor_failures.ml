@@ -1,6 +1,8 @@
 (* TEST
  include unix;
  include runtime_events;
+ ocamlrunparam += ",v=0";
+ debug-runtime;
  hasunix;
  not-root;
  {

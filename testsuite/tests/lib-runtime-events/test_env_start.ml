@@ -1,5 +1,7 @@
 (* TEST
  include runtime_events;
+ ocamlrunparam += ",v=0";
+ debug-runtime;
  set OCAML_RUNTIME_EVENTS_START = "1";
 *)
 

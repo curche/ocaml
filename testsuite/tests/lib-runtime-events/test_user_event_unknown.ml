@@ -1,5 +1,7 @@
 (* TEST
  include runtime_events;
+ ocamlrunparam += ",v=0";
+ debug-runtime;
  include unix;
  set OCAML_RUNTIME_EVENTS_PRESERVE = "1";
  hasunix;

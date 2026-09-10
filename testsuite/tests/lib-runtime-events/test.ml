@@ -1,6 +1,8 @@
 (* TEST
  modules = "stubs.c";
  include runtime_events;
+ ocamlrunparam += ",v=0";
+ debug-runtime;
 *)
 
 external start_runtime_events : unit -> unit = "start_runtime_events"

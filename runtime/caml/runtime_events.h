@@ -31,6 +31,24 @@
 #include "mlvalues.h"
 #include "runtime_events_usdt.h"
 
+/* The runtime_events ring buffer lives in the debug runtime.
+ *
+ * In the default runtime, tracing is done with the USDT probes above: they
+ * need no ring, no consumer, and no OCAMLRUNPARAM setting, and a tracer can
+ * attach to an already-running process. Select the ring with
+ * `-runtime-variant d`.
+ *
+ * The gate is a macro of its own rather than a direct test of DEBUG so that
+ * -DCAML_RUNTIME_EVENTS can build a ring-enabled runtime *without* DEBUG's
+ * several hundred assertions and heap poisoning. That matters for measurement:
+ * comparing the ring against USDT on the debug runtime alone would confound
+ * the comparison with DEBUG's own overhead, which changes GC timing and hence
+ * the event rate. */
+#if (defined(DEBUG) || defined(CAML_INSTR)) \
+    && !defined(CAML_RUNTIME_EVENTS)
+#define CAML_RUNTIME_EVENTS 1
+#endif
+
 #ifdef CAML_INSTR
 #define CAML_EV_ALLOC(s) caml_ev_alloc(s)
 #define CAML_EV_ALLOC_FLUSH() caml_ev_alloc_flush()

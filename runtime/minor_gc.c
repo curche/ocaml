@@ -1105,7 +1105,7 @@ static void realloc_generic_table
     alloc_generic_table (tbl, Caml_state->minor_heap_wsz / 8, 256,
                          element_size);
   }else if (tbl->limit == tbl->threshold){
-    CAML_EV_COUNTER (ev_counter_name, 1);
+    CAML_EV_COUNTER_DYN (ev_counter_name, 1);
     CAML_GC_MESSAGE(STACKSIZE, msg_threshold, 0);
     tbl->limit = tbl->end;
     caml_request_minor_gc ();

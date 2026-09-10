@@ -29,6 +29,7 @@
 #define CAML_RUNTIME_EVENTS_H
 
 #include "mlvalues.h"
+#include "runtime_events_usdt.h"
 
 #ifdef CAML_INSTR
 #define CAML_EV_ALLOC(s) caml_ev_alloc(s)
@@ -38,10 +39,51 @@
 #define CAML_EV_ALLOC_FLUSH() /**/
 #endif
 
-#define CAML_EV_BEGIN(p) caml_ev_begin(p)
-#define CAML_EV_END(p) caml_ev_end(p)
-#define CAML_EV_COUNTER(c,v) caml_ev_counter(c,v)
-#define CAML_EV_LIFECYCLE(l,d) caml_ev_lifecycle(l,d)
+/* Each event fires two ways: a USDT probe, and the runtime_events ring.
+ *
+ * The USDT probe fires *unconditionally* -- it is not gated on the ring being
+ * active. That is deliberate and is the main practical gain over the ring: a
+ * tracer can attach to any running OCaml process at any time, with no
+ * OCAMLRUNPARAM setting, no OCAML_RUNTIME_EVENTS_START, and no ring to size
+ * or drain. When nothing is attached the probe is a single nop.
+ *
+ * caml_ev_* still perform their own ring-active checks, so the ring path is
+ * unchanged.
+ *
+ * Counter and lifecycle arguments are evaluated exactly once into a temporary
+ * before being handed to both consumers. Every current call site passes a
+ * pure expression, but a future one may not, and double evaluation would be a
+ * silent behaviour change rather than a mere instrumentation bug.
+ */
+#define CAML_EV_BEGIN(p) \
+  do { CAML_USDT_EV_BEGIN(p); caml_ev_begin(p); } while (0)
+#define CAML_EV_END(p) \
+  do { CAML_USDT_EV_END(p); caml_ev_end(p); } while (0)
+#define CAML_EV_COUNTER(c,v) \
+  do { \
+    uint64_t caml_ev_usdt_val = (v); \
+    CAML_USDT_EV_COUNTER(c, caml_ev_usdt_val); \
+    caml_ev_counter(c, caml_ev_usdt_val); \
+  } while (0)
+#define CAML_EV_LIFECYCLE(l,d) \
+  do { \
+    int64_t caml_ev_usdt_data = (d); \
+    CAML_USDT_EV_LIFECYCLE(l, caml_ev_usdt_data); \
+    caml_ev_lifecycle(l, caml_ev_usdt_data); \
+  } while (0)
+
+/* For the one call site whose counter is a runtime value rather than a
+   literal (realloc_generic_table in minor_gc.c). Dispatches to the right
+   per-counter probe instead of collapsing to a generic one, so no counter
+   loses its own attach point. Use CAML_EV_COUNTER wherever the counter is
+   known at compile time. */
+#define CAML_EV_COUNTER_DYN(c,v) \
+  do { \
+    ev_runtime_counter caml_ev_usdt_ctr = (c); \
+    uint64_t caml_ev_usdt_val = (v); \
+    CAML_USDT_EV_COUNTER_DYN(caml_ev_usdt_ctr, caml_ev_usdt_val); \
+    caml_ev_counter(caml_ev_usdt_ctr, caml_ev_usdt_val); \
+  } while (0)
 #define CAML_RUNTIME_EVENTS_INIT() caml_runtime_events_init()
 #define CAML_RUNTIME_EVENTS_DESTROY() caml_runtime_events_destroy()
 typedef enum {

@@ -135,6 +135,74 @@
 #define CAML_USDT_EV_LIFECYCLE(l, d) \
   STAP_PROBE1(ocaml, CAML_USDT_CAT(CAML_USDT_LIFECYCLE_##l, ), (d))
 
+/* Dispatch for the one site that cannot name its counter as a
+ * literal: realloc_generic_table() in minor_gc.c takes the counter as
+ * a parameter, and its three callers pass three different ones. A
+ * generated switch keeps every counter individually attachable rather
+ * than collapsing those three into one generic probe. Only the arm
+ * actually reached fires, and the site is cold (minor-GC table
+ * growth), so the unreached nops cost nothing. */
+#define CAML_USDT_EV_COUNTER_DYN(c, v) \
+  do { switch (c) { \
+    case EV_C_FORCE_MINOR_ALLOC_SMALL: \
+      CAML_USDT_EV_COUNTER(EV_C_FORCE_MINOR_ALLOC_SMALL, (v)); break; \
+    case EV_C_FORCE_MINOR_MAKE_VECT: \
+      CAML_USDT_EV_COUNTER(EV_C_FORCE_MINOR_MAKE_VECT, (v)); break; \
+    case EV_C_FORCE_MINOR_SET_MINOR_HEAP_SIZE: \
+      CAML_USDT_EV_COUNTER(EV_C_FORCE_MINOR_SET_MINOR_HEAP_SIZE, (v)); break; \
+    case EV_C_FORCE_MINOR_MEMPROF: \
+      CAML_USDT_EV_COUNTER(EV_C_FORCE_MINOR_MEMPROF, (v)); break; \
+    case EV_C_MINOR_PROMOTED: \
+      CAML_USDT_EV_COUNTER(EV_C_MINOR_PROMOTED, (v)); break; \
+    case EV_C_MINOR_ALLOCATED: \
+      CAML_USDT_EV_COUNTER(EV_C_MINOR_ALLOCATED, (v)); break; \
+    case EV_C_REQUEST_MAJOR_ALLOC_SHR: \
+      CAML_USDT_EV_COUNTER(EV_C_REQUEST_MAJOR_ALLOC_SHR, (v)); break; \
+    case EV_C_REQUEST_MAJOR_ADJUST_GC_SPEED: \
+      CAML_USDT_EV_COUNTER(EV_C_REQUEST_MAJOR_ADJUST_GC_SPEED, (v)); break; \
+    case EV_C_REQUEST_MINOR_REALLOC_REF_TABLE: \
+      CAML_USDT_EV_COUNTER(EV_C_REQUEST_MINOR_REALLOC_REF_TABLE, (v)); break; \
+    case EV_C_REQUEST_MINOR_REALLOC_EPHE_REF_TABLE: \
+      CAML_USDT_EV_COUNTER(EV_C_REQUEST_MINOR_REALLOC_EPHE_REF_TABLE, (v)); break; \
+    case EV_C_REQUEST_MINOR_REALLOC_CUSTOM_TABLE: \
+      CAML_USDT_EV_COUNTER(EV_C_REQUEST_MINOR_REALLOC_CUSTOM_TABLE, (v)); break; \
+    case EV_C_MAJOR_HEAP_POOL_WORDS: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_HEAP_POOL_WORDS, (v)); break; \
+    case EV_C_MAJOR_HEAP_POOL_LIVE_WORDS: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_HEAP_POOL_LIVE_WORDS, (v)); break; \
+    case EV_C_MAJOR_HEAP_LARGE_WORDS: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_HEAP_LARGE_WORDS, (v)); break; \
+    case EV_C_MAJOR_HEAP_POOL_FRAG_WORDS: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_HEAP_POOL_FRAG_WORDS, (v)); break; \
+    case EV_C_MAJOR_HEAP_POOL_LIVE_BLOCKS: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_HEAP_POOL_LIVE_BLOCKS, (v)); break; \
+    case EV_C_MAJOR_HEAP_LARGE_BLOCKS: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_HEAP_LARGE_BLOCKS, (v)); break; \
+    case EV_C_MAJOR_HEAP_WORDS: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_HEAP_WORDS, (v)); break; \
+    case EV_C_MAJOR_ALLOCATED_WORDS: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_ALLOCATED_WORDS, (v)); break; \
+    case EV_C_MAJOR_ALLOCATED_WORK: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_ALLOCATED_WORK, (v)); break; \
+    case EV_C_MAJOR_DEPENDENT_WORK: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_DEPENDENT_WORK, (v)); break; \
+    case EV_C_MAJOR_EXTRA_WORK: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_EXTRA_WORK, (v)); break; \
+    case EV_C_MAJOR_WORK_COUNTER: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_WORK_COUNTER, (v)); break; \
+    case EV_C_MAJOR_ALLOC_COUNTER: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_ALLOC_COUNTER, (v)); break; \
+    case EV_C_MAJOR_SLICE_TARGET: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_SLICE_TARGET, (v)); break; \
+    case EV_C_MAJOR_SLICE_BUDGET: \
+      CAML_USDT_EV_COUNTER(EV_C_MAJOR_SLICE_BUDGET, (v)); break; \
+    case EV_C_MINOR_ALLOCATED_WORDS: \
+      CAML_USDT_EV_COUNTER(EV_C_MINOR_ALLOCATED_WORDS, (v)); break; \
+    case EV_C_MINOR_PROMOTED_WORDS: \
+      CAML_USDT_EV_COUNTER(EV_C_MINOR_PROMOTED_WORDS, (v)); break; \
+    default: break; \
+  } } while (0)
+
 #else /* no <sys/sdt.h>, or USDT explicitly disabled */
 
 /* The arguments are still evaluated: a counter value or lifecycle
@@ -144,6 +212,7 @@
 #define CAML_USDT_EV_END(p)          ((void) 0)
 #define CAML_USDT_EV_COUNTER(c, v)   ((void) (v))
 #define CAML_USDT_EV_LIFECYCLE(l, d) ((void) (d))
+#define CAML_USDT_EV_COUNTER_DYN(c, v) ((void) (c), (void) (v))
 
 #endif
 

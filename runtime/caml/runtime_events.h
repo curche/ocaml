@@ -157,7 +157,11 @@ typedef enum {
     EV_C_MAJOR_SLICE_BUDGET,
 
     EV_C_MINOR_ALLOCATED_WORDS,
-    EV_C_MINOR_PROMOTED_WORDS
+    EV_C_MINOR_PROMOTED_WORDS,
+
+    /* Total work done in an EV_MAJOR_MARK_OPPORTUNISTIC span, aggregated
+       over every opportunistic slice run during one spin phase. */
+    EV_C_MAJOR_SLICE_WORK_DONE
 
 } ev_runtime_counter;
 

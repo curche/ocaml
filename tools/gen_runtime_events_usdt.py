@@ -48,7 +48,11 @@ def probe_name(ident, strip):
     return ident[len(strip):].lower()
 
 
-SCAN_GLOBS = ['runtime/*.c', 'runtime/*.h', 'runtime/caml/*.h']
+# otherlibs is in scope too: caml_ev_lifecycle is CAMLextern precisely
+# because otherlibs/unix/fork.c needs it, so a non-literal site could appear
+# there and must not escape the check.
+SCAN_GLOBS = ['runtime/*.c', 'runtime/*.h', 'runtime/caml/*.h',
+              'otherlibs/*/*.c', 'otherlibs/*/*.h']
 
 # The one site that legitimately cannot use a literal: realloc_generic_table()
 # takes its counter as a parameter. It uses CAML_EV_COUNTER_DYN instead, which
@@ -70,9 +74,17 @@ def check_literal_sites():
     offenders = []
     total = 0
     for path in sorted(set(sum((glob.glob(g) for g in SCAN_GLOBS), []))):
-        if path.endswith('runtime_events.h'):
-            continue          # the macro definitions themselves
+        if path.endswith(('runtime_events.h', OUTPUT.split('/')[-1])):
+            continue          # the macro definitions and this file's own output
         text = open(path).read()
+        # Blank out comments before matching, keeping offsets so reported line
+        # numbers stay right. Prose mentioning CAML_EV_BEGIN(EV_MINOR) is
+        # documentation, not a call site, and counting it inflates the total.
+        text = re.sub(r'/\*.*?\*/',
+                      lambda m: re.sub(r'[^\n]', ' ', m.group(0)),
+                      text, flags=re.S)
+        text = re.sub(r'//[^\n]*',
+                      lambda m: ' ' * len(m.group(0)), text)
         for m in pat.finditer(text):
             macro, arg = 'CAML_EV_' + m.group(1), m.group(2)
             total += 1

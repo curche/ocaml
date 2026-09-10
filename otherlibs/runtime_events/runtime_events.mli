@@ -201,6 +201,12 @@ Total {b words} promoted from the minor heap of this Domain to the major heap
 in the last minor collection.
 @since 5.4
 *)
+| EV_C_MAJOR_SLICE_WORK_DONE
+(**
+Total {b words} of major GC work done in an [EV_MAJOR_MARK_OPPORTUNISTIC]
+span, aggregated over every opportunistic slice run during one spin phase.
+@since 5.6
+*)
 
 (** The type for span events emitted by the runtime. *)
 type runtime_phase =

@@ -605,6 +605,11 @@ AC_ARG_ENABLE([frame-pointers],
   [AS_HELP_STRING([--enable-frame-pointers],
     [use frame pointers in runtime and generated code])])
 
+AC_ARG_ENABLE([usdt],
+  [AS_HELP_STRING([--enable-usdt],
+    [emit USDT tracing probes in the runtime (requires <sys/sdt.h>)
+     [default=auto]])])
+
 AC_ARG_ENABLE([naked-pointers], [],
   [AS_IF([test "x$enableval" != 'xno'],
     [AC_MSG_ERROR([Naked pointers were prohibited in OCaml 5.0.])])],
@@ -1398,6 +1403,20 @@ AC_CHECK_HEADER([sys/select.h], [AC_DEFINE([HAS_SYS_SELECT_H], [1])], [],
   [#include <sys/types.h>])
 
 AC_CHECK_HEADER([sys/mman.h], [AC_DEFINE([HAS_SYS_MMAN_H], [1])])
+
+# USDT probes need <sys/sdt.h> (systemtap-sdt-dev, or DTrace on *BSD/macOS).
+# Default is auto: use it when present, silently do without when not.
+AS_IF([test x"$enable_usdt" = "xno"],
+  [AC_MSG_CHECKING([for <sys/sdt.h>])
+   AC_MSG_RESULT([disabled by --disable-usdt])
+   usdt=false],
+  [AC_CHECK_HEADER([sys/sdt.h],
+    [AC_DEFINE([HAS_SYS_SDT_H], [1])
+     usdt=true],
+    [AS_IF([test x"$enable_usdt" = "xyes"],
+      [AC_MSG_ERROR([--enable-usdt given but <sys/sdt.h> not found])])
+     usdt=false])])
+AC_SUBST([usdt])
 
 AS_CASE([$target],
   [*-*-linux*],

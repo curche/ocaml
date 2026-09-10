@@ -728,6 +728,7 @@ ax_pthread_config
 PKG_CONFIG
 rlwrap
 DIRECT_LD
+usdt
 INSTALL_DATA
 INSTALL_SCRIPT
 INSTALL_PROGRAM
@@ -1040,6 +1041,7 @@ enable_ocamlobjinfo
 enable_ocamltest
 enable_native_toplevel
 enable_frame_pointers
+enable_usdt
 enable_naked_pointers
 enable_naked_pointers_checker
 enable_spacetime
@@ -1748,6 +1750,8 @@ Optional Features:
   --enable-native-toplevel
                           build the native toplevel
   --enable-frame-pointers use frame pointers in runtime and generated code
+  --enable-usdt           emit USDT tracing probes in the runtime (requires
+                          <sys/sdt.h>) [default=auto]
   --disable-cfi           disable the CFI directives in assembly files
   --enable-imprecise-c99-float-ops
                           enables potentially imprecise replacement
@@ -4241,6 +4245,13 @@ fi
 if test ${enable_frame_pointers+y}
 then :
   enableval=$enable_frame_pointers;
+fi
+
+
+# Check whether --enable-usdt was given.
+if test ${enable_usdt+y}
+then :
+  enableval=$enable_usdt;
 fi
 
 
@@ -17882,6 +17893,33 @@ ac_fn_c_check_header_compile "$LINENO" "sys/mman.h" "ac_cv_header_sys_mman_h" "$
 if test "x$ac_cv_header_sys_mman_h" = xyes
 then :
   printf "%s\n" "#define HAS_SYS_MMAN_H 1" >>confdefs.h
+
+fi
+
+
+# USDT probes need <sys/sdt.h> (systemtap-sdt-dev, or DTrace on *BSD/macOS).
+# Default is auto: use it when present, silently do without when not.
+if test x"$enable_usdt" = "xno"
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for <sys/sdt.h>" >&5
+printf %s "checking for <sys/sdt.h>... " >&6; }
+   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: disabled by --disable-usdt" >&5
+printf "%s\n" "disabled by --disable-usdt" >&6; }
+   usdt=false
+else $as_nop
+  ac_fn_c_check_header_compile "$LINENO" "sys/sdt.h" "ac_cv_header_sys_sdt_h" "$ac_includes_default"
+if test "x$ac_cv_header_sys_sdt_h" = xyes
+then :
+  printf "%s\n" "#define HAS_SYS_SDT_H 1" >>confdefs.h
+
+     usdt=true
+else $as_nop
+  if test x"$enable_usdt" = "xyes"
+then :
+  as_fn_error $? "--enable-usdt given but <sys/sdt.h> not found" "$LINENO" 5
+fi
+     usdt=false
+fi
 
 fi
 
